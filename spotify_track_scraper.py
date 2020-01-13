@@ -303,8 +303,8 @@ def plot_histogram(all_items):
     number_of_weeks = number_of_days//7
     number_of_months = number_of_days//30
 #    axes = plt.gca()
-    ax.set_ylim([1,120])
-    n,bins,pathces = plt.hist(data,bins=number_of_days,label="Number of newly added songs/week",color='#1DB954')
+    ax.set_ylim([1,55])
+    n,bins,pathces = plt.hist(data,bins=number_of_days,label="Number of newly added songs/days",color='#1DB954')
     fig.patch.set_facecolor('black')
     ax.patch.set_facecolor('black')
     ax.spines['bottom'].set_color('white')
@@ -321,10 +321,10 @@ def plot_histogram(all_items):
         if n % every_nth != 0:
             label.set_visible(False)
     plt.xlabel('Date')
-    plt.ylabel('No. of added tracks per week')
-    plt.title("Track Discovery Histogram")
+    plt.ylabel('No. of added tracks per day')
+    plt.title("Track Discovery / day")
 #    fig.set_size_inches(12, 8)
-#    plt.savefig('histogram.png', dpi = 500)
+#    plt.savefig('histogram.png', dpi = 100)
     return
 
 def plot_all_scatters(all_items):
@@ -347,7 +347,7 @@ def basic_UI():
             print("Data collected. Plotting...")
             plot_histogram(all_items)
             plt.show()
-            input("")
+            input("press any key to continue")
         elif user_input == 2:
             num = 100
             print("Getting data, please be patient...")
@@ -355,13 +355,13 @@ def basic_UI():
             print("Data collected. Plotting...")
             plot_scatter(all_items)
             plt.show()
-            input("")
+            input("press any key to continue")
         elif user_input == 3:
             num = 2790
             print("Getting data, please be patient...")
             all_items = get_library(num)
             get_average_metrics(all_items)
-            input("")
+            input("press any key to continue")
         elif user_input == 4:
             print("Quitting...")
             return
