@@ -11,4 +11,6 @@ Currently supported operations are:
  Sample Images:
  ---------
  
- ![Histogram](histogram_example.png)
+ ![Histogram](histogram.png)
+ 
+ ![Metrics](metrics.png)
