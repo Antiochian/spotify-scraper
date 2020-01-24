@@ -23,21 +23,22 @@ import spotipy.util as util
 import dateutil.parser as dp
 import time
 import matplotlib.pyplot as plt
+import numpy as np
 from datetime import datetime
 
 import scraperconfig
 #this info is contained inside a seperate config file called scraperconfig.py
 #(this is not included here for security reasons)
-CLIENT_ID, CLIENT_SECRET,REDIRECT,USER_NAME = scraperconfig.get_secret_info()
-scope = 'user-library-read user-top-read'
 
-#get auth token, make client object called "spotify"
-token = util.prompt_for_user_token(USER_NAME, scope,CLIENT_ID,CLIENT_SECRET,REDIRECT)
-spotify = spotipy.Spotify(auth=token)
-
+def get_number_of_tracks():
+    probe = spotify.current_user_saved_tracks(limit=1, offset=0)
+    number_of_tracks = probe['total']
+    return number_of_tracks
 
 def convert_time(ISOtime):
     #converts spotifys ISO86001 time format to epoch milliseconds
+    if type(ISOtime) == dict:
+        ISOtime = ISOtime['added_at']
     parsed_t = dp.parse(ISOtime)
     #to get only day: parsed_t = dp.parse(ISOtime[0:10])
     seconds = parsed_t.timestamp()
@@ -54,12 +55,12 @@ def get_top_from_freq_dict(freq_dict,limit=10):
         labels.append(sorted_data[-i][0])
     return data,labels
 
-def count_frequency(blank_freq_dict,input_list):
+def count_frequency(input_list):
     #given a list with repeating values, create a freq dictionary
-    freq_dict = blank_freq_dict.copy()
+    freq_dict = {}
     for el in input_list:
         if el not in freq_dict:
-            print("ERROR// ",el)
+            freq_dict[el] = 1
         else:
             freq_dict[el] += 1
     return freq_dict
@@ -249,27 +250,83 @@ def get_average_metrics(all_info):
     print("Acousticness = ", round(sum(A)/n,3))
     print("Instrumentalness = ", round(sum(I)/n,3))
     return
+
+def plot_mood_trends(all_items):
+    IDs = get_track_IDs(all_items)
+    all_info = get_track_metrics(IDs)
+    E,V = get_energy_X_valence(all_info,"energy","valence")
+    D,T = get_energy_X_valence(all_info,"danceability","tempo")
+    A,I = get_energy_X_valence(all_info,"acousticness","instrumentalness")
+
+    featured_dates = get_play_dates(all_items) #dates    
+    featured_dates.reverse()
+    all_days = add_blank_days(all_items)
     
+    i = 0
+    date_dict = {}
+    for date in set(all_days):
+        date_dict[date] = i
+        i += 1
+        
+    x = []
+    for date in set(featured_dates):
+        if date in date_dict.keys():
+            x.append(date_dict[date])
+        else:
+            print("date ",date," skipped")
+            
+    Ey = concatenate_metrics(E,featured_dates)
+#    Vy = concatenate_metrics(V,featured_dates)
+#    Dy = concatenate_metrics(D,featured_dates)
+##    Ty = concatenate_metrics(T,featured_dates)
+#    Ay = concatenate_metrics(A,featured_dates)
+#    Iy = concatenate_metrics(I,featured_dates)
+
+    plt.plot(x,Ey,marker='o')
+#    plt.plot(x,Vy)
+#    plt.plot(x,Dy)
+#    plt.plot(x,Ay)
+#    plt.plot(x,Iy)
+#    legend((Ey,Vy,Dy,Ay,Iy),("Energy","Mood","Danceability","Acoustincess","Instrumentalness"))
+    plt.show()
+    return
+
+def concatenate_metrics(metric,featured_dates):
+    y = []
+    running_average = []
+    prev_date = featured_dates[0]
+    for i in range(len(featured_dates)):
+        date = featured_dates[i]
+        if date == prev_date:
+            running_average.append(metric[i])                        
+        else:
+            average = sum(running_average)/len(running_average)
+            y.append(average)
+            prev_date = date
+            running_average = []
+            running_average.append(metric[i])
+    return y
+
 def plot_scatter(all_items,X="energy",Y="valence"):
     #plot valence vs energy
     IDs = get_track_IDs(all_items)
     all_info = get_track_metrics(IDs)
     E,V = get_energy_X_valence(all_info,X,Y)
     fig, ax = plt.subplots()
-    plt.scatter(E,V,s = (plt.rcParams['lines.markersize'] ** 2)/4, c = "#1DB954")
-    
+    plt.scatter(E,V,s = (plt.rcParams['lines.markersize'] ** 2)/4, c = spotify_green)
+    #set up colours
     fig.patch.set_facecolor('black')
     ax.patch.set_facecolor('black')
     ax.spines['bottom'].set_color('white')
     ax.spines['left'].set_color('white')
     ax.spines['right'].set_color('white')
     ax.spines['top'].set_color('white')
-    
     ax.tick_params(axis='x', colors='white', which="both")
     ax.tick_params(axis='y', colors='white', which="both")
     ax.yaxis.label.set_color('white')
     ax.xaxis.label.set_color('white')
     ax.title.set_color('white')
+    #set labels
     plt.xlabel(X)
     plt.ylabel(Y)
     plt.title(X+" vs "+Y+" scatterplot")
@@ -292,78 +349,155 @@ def plot_artist_pi(all_items):
     plt.savefig('artist_pie.png', dpi = 500)
     return
 
-def plot_histogram(all_items):
+def get_labels(all_dates, bar_width, number_of_labels=5):
+    number_of_labels += 1 #correction
+    number_of_dates = len(all_dates)
+    total_width = number_of_dates*bar_width
+    label_locations = [x for x in range(0,total_width, (total_width//number_of_labels)+1)] + [total_width]
+    
+    labels = [all_dates[index] for index in range(0,number_of_dates,number_of_dates//number_of_labels)] + [all_dates[number_of_dates-1]]
+    return labels, label_locations
+    
+def plot_bar_chart(all_items,period=1): #period = days per bar (1 = daily, 7 = weekly, etc)
     raw_data = get_play_dates(all_items)
+    freq_dict = count_frequency(raw_data)
+    bar_width = 10 #must be integer for range reasons down the line
+    bin_width = period*bar_width
     all_dates = add_blank_days(raw_data)
-    data = raw_data+all_dates
-    data.sort()
-    #add in extra days of no-plays
+    #get label locations
+    number_of_bins = len(all_dates)//period + 1
+    data = []
+    buffer = []
+    for date in all_dates:
+        if date in freq_dict.keys():
+            buffer.append(freq_dict[date])
+        else:
+            buffer.append(0)
+        if len(buffer) == period:
+            data.append(sum(buffer))
+            buffer = []
+    if buffer != []: #clean remainder into final bin
+        data.append(sum(buffer))
+            
+        #add labels
     fig, ax = plt.subplots()
-    number_of_days = len(set(data))
-    number_of_weeks = number_of_days//7
-    number_of_months = number_of_days//30
-#    axes = plt.gca()
-    ax.set_ylim([1,55])
-    n,bins,pathces = plt.hist(data,bins=number_of_days,label="Number of newly added songs/days",color='#1DB954')
+    #get bar locations:
+    x = [i for i in range(0,bin_width*number_of_bins,bin_width)]
+    #if the period doesnt subdivide the time period, fix mismatch by cleaning up x
+    if len(x) - len(data) == 1:
+        x.remove(x[-1])
+     
+    #ACTUAL PLOT
+    plt.bar(x,data,width=bin_width,align = "edge", color=spotify_green)
+    
+    #set labels, colours
+    labels, label_locations = get_labels(all_dates, bar_width,3)
+    ax.set_xticks(label_locations)
+    ax.set_xticklabels(labels)
     fig.patch.set_facecolor('black')
     ax.patch.set_facecolor('black')
     ax.spines['bottom'].set_color('white')
     ax.spines['left'].set_color('white')
-
     ax.tick_params(axis='x', colors='white', which="both")
     ax.tick_params(axis='y', colors='white', which="both")
     ax.yaxis.label.set_color('white')
     ax.xaxis.label.set_color('white')
     ax.title.set_color('white')
-    
-    every_nth = number_of_days//5
-    for n, label in enumerate(ax.xaxis.get_ticklabels()):
-        if n % every_nth != 0:
-            label.set_visible(False)
+    #set title
+    if period == 1:
+        period_string = "day"
+    elif period == 7:
+        period_string = "month"
+    elif period == 30 or period == 31:
+        period_string = "month"
+    else:
+        period_string = str(period)+" days"     
     plt.xlabel('Date')
-    plt.ylabel('No. of added tracks per day')
-    plt.title("Track Discovery / day")
-#    fig.set_size_inches(12, 8)
-#    plt.savefig('histogram.png', dpi = 100)
+    plt.ylabel('No. of new tracks per '+period_string)
+    plt.title("Track Discovery / "+period_string)
+    fig.set_size_inches(20, 8)
+#    plt.savefig('bar_chart.png', dpi = 100)
+#    plt.show()
     return
 
 def plot_all_scatters(all_items):
+    #<TODO> 4-way subplot figure
     return
 
-def basic_UI():
+def basic_UI(): #simple CLI program flow
+    CLIENT_ID, CLIENT_SECRET,REDIRECT,USER_NAME = scraperconfig.get_secret_info()
+    scope = 'user-library-read user-top-read'
+    
+    USER_NAME = "mrsnail4"
+    #get auth token, make client object called "spotify"
+    global token
+    token = util.prompt_for_user_token(USER_NAME, scope,CLIENT_ID,CLIENT_SECRET,REDIRECT)
+    global spotify
+    spotify = spotipy.Spotify(auth=token)
+    global spotify_green
+    spotify_green = "#1DB954"
+    current_num = None
+    max_num = get_number_of_tracks()
     print("Spotify Scraper - by Henry")
     print("--------------------------")
     while True:
         print("Current User: ",USER_NAME)
-        print("\t 1. Plot Histogram of saved track frequency")
+        print("\t 1. Newly Saved Tracks/Day")
         print("\t 2. Plot Scatterplot of top tracks' Energy/Valence")
         print("\t 3. Output average metric data")
         print("\t 4. Quit")
         user_input = int(input("\t>:"))
         if user_input == 1:
-            num = 2790
-            print("Getting data, please be patient...")
+            num = choose_num()
+            if num == "maximum":
+                num = max_num
+            if num != current_num:
+                print("\tGetting data, please be patient...")
             all_items = get_library(num)
-            print("Data collected. Plotting...")
-            plot_histogram(all_items)
+            current_num = num
+            print("\tData collected. Plotting...")
+            plot_bar_chart(all_items)
             plt.show()
-            input("press any key to continue")
         elif user_input == 2:
-            num = 100
-            print("Getting data, please be patient...")
-            all_items = get_library(num)
-            print("Data collected. Plotting...")
+            num = choose_num()
+            if num == "maximum":
+                num = max_num
+            if num != current_num:
+                print("\tGetting data, please be patient...")
+                all_items = get_library(num)
+                current_num = num
+            print("\tData collected. Plotting...")
             plot_scatter(all_items)
             plt.show()
-            input("press any key to continue")
         elif user_input == 3:
-            num = 2790
-            print("Getting data, please be patient...")
-            all_items = get_library(num)
+            num = choose_num()
+            if num == "maximum":
+                num = max_num
+            if num != current_num:
+                print("\tGetting data, please be patient...")
+                all_items = get_library(num)
+                current_num = num
             get_average_metrics(all_items)
-            input("press any key to continue")
         elif user_input == 4:
-            print("Quitting...")
+            print("Program exited.")
             return
+        input("press any key to continue\t")
+            
+def choose_num():
+    print("Choose settings:")
+    print("\t1. default\n\t2. custom\ ")
+    user_input = int(input())
+    if user_input == 1:
+        num = "maximum"
+    return num
+
+def simple_test():
+    all_items = get_library(2790)
+    t0 = time.time()
+    plot_bar_chart(all_items)
+    print("time_taken:  ",round(time.time()-t0,5)," seconds")
+    return
 
 basic_UI()
+#all_items = get_library(300)
+#plot_mood_trends(all_items)
