@@ -6,8 +6,8 @@ TODO:
  - [x] new track addition frequency
  - [x] metric scatterplots
  - [x] average metric values
- - [ ] Export all tracks as CSV
- - [ ] Other data visualisations?
+ - [x] Export all tracks as CSV
+ - [x] Other data visualisations?
  - [ ] host as Flash/Django web app
  
  Sample Images:
